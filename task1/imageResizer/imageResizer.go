@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	savingPath = "/home/dheyoungb/go/src/github.com/dairovolzhas/dar-intership/task1/imageResizer/resizedImages/"
+	savingPath = "/home/dheyoungb/go/src/github.com/dairovolzhas/dar-internship/task1/imageResizer/resizedImages/"
 	normalWidth, normalHeight uint = 800, 800
 	thumbnailWidth, thumbnailHeight uint = 200, 200
 )

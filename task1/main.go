@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/dairovolzhas/dar-intership/task1/imageResizer"
+	"github.com/dairovolzhas/dar-internship/task1/imageResizer"
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
