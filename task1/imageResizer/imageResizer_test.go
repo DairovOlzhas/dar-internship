@@ -111,10 +111,11 @@ func BenchmarkImageResizer_SaveImages(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 
 			ir, err := imageResizerFromImagePath(bm.filepath)
-			ir.fileName = strings.ReplaceAll(ir.fileName, "/", "")
 			if err != nil {
 				b.Fatal(err)
 			}
+			ir.fileName = strings.ReplaceAll(ir.fileName, "/", "")
+
 			_, err = ir.GetNormalImg()
 			if err != nil {
 				b.Fatal(err)
@@ -127,7 +128,7 @@ func BenchmarkImageResizer_SaveImages(b *testing.B) {
 			b.ResetTimer()
 
 			for i:=0; i < b.N; i++ {
-				err = ir.SaveImages()
+				_, _, _, err = ir.SaveImages()
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -135,6 +136,11 @@ func BenchmarkImageResizer_SaveImages(b *testing.B) {
 		})
 	}
 }
+
+//func BenchmarkImageProcessingHandler(b *testing.B) {
+//
+//}
+
 
 func imageResizerFromImagePath(path string) (*ImageResizer, error) {
 	file, err := os.Open(path)

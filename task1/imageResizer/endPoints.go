@@ -1,11 +1,12 @@
 package imageResizer
 
 import (
+	"encoding/json"
 	"net/http"
 )
 
 
-
+// Proceeds got image and return links to saved resulting images
 func ImageProcessingHandler(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("image")
 	if err != nil {
@@ -35,7 +36,19 @@ func ImageProcessingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = imageResizer.SaveImages()
+	nrmlImgPath, origImgPath, tbnlImgPath, err := imageResizer.SaveImages()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Sorry: " + err.Error()))
+		return
+	}
+
+	result := Result{
+		NrmlImgPath: nrmlImgPath,
+		OrigImgPath: origImgPath,
+		TbnlImgPath: tbnlImgPath,
+	}
+	data, err := json.Marshal(result)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("Sorry: " + err.Error()))
@@ -43,5 +56,6 @@ func ImageProcessingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
+	w.Write(data)
 }
 

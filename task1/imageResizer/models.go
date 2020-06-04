@@ -9,3 +9,9 @@ type ImageResizer struct {
 	imageFormat  string
 	fileName     string
 }
+
+type Result struct {
+	NrmlImgPath string `json:"nrmlImgPath"`
+	OrigImgPath string `json:"origImgPath"`
+	TbnlImgPath string `json:"tbnlImgPath"`
+}
