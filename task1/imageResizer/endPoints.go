@@ -22,6 +22,7 @@ func ImageProcessingHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Sorry: " + err.Error()))
 		return
 	}
+
 	_, err = imageResizer.GetNormalImg()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
