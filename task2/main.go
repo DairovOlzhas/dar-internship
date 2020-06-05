@@ -1,11 +1,6 @@
 package main
 
-import (
-	"fmt"
-	"github.com/dairovolzhas/dar-internship/task2/passwordStrength"
-)
-
-
+import "github.com/dairovolzhas/dar-internship/task2/passwordStrength"
 
 var (
 	regex = `.`
@@ -14,9 +9,11 @@ var (
 
 func main() {
 	config := passwordStrength.Config{
-		RegexReq: map[string]int{
+		RegExpReq: map[string]int{
 			``:3,
 		},
 	}
-	passwordStrength.PasswordStrength("asdfasfdas", )
+	passwordStrength.LoadDict()
+	passwordStrength.PasswordStrength("asdfasfdas", config)
+
 }

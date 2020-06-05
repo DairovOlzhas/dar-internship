@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -41,4 +45,26 @@ func ItersPerSecond(n int){
 		cnt +=1
 	}
 	fmt.Println(cnt)
+}
+
+func dict(){
+	file, err := os.Open("passwordStrength/dictionary.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	var dict []string
+
+	for scanner.Scan() {
+		dict = append(dict, scanner.Text())
+	}
+	sort.Strings(dict)
+
+	newFile, err := os.Create("dictionary.txt")
+	w := bufio.NewWriter(newFile)
+	w.WriteString(strings.Join(dict, "\n"))
+
 }
