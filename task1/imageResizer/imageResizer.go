@@ -140,7 +140,7 @@ func saveImage(image image.Image, name string, imageFormat string) (string, erro
 
 	f, err := os.Create(rel +"/"+ name + "." + imageFormat)
 	if err != nil {
-		return "", err
+		return "", errors.New(fmt.Sprintf("%v\ncur: %v\nsaving: %v\nrel: %v\n", err.Error(), cur, savingPath, rel))
 	}
 	defer f.Close()
 
@@ -161,7 +161,7 @@ func saveImage(image image.Image, name string, imageFormat string) (string, erro
 	}
 
 
-	return cur + "/"+ name + "." + imageFormat, nil
+	return cur + "/" + rel + "/"+ name + "." + imageFormat, nil
 }
 
 func min(a,b int) int {

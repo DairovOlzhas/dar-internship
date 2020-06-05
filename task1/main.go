@@ -15,20 +15,6 @@ var (
 
 
 func main(){
-	//file, err := os.Open("testdata/BigImage.jpg")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//defer file.Close()
-	//fi, err := file.Stat()
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//_, err = imageResizer.NewImageResizer(file, file.Name(), fi.Size())
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-
 
 	r := mux.NewRouter()
 
