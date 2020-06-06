@@ -1,19 +1,25 @@
 package main
 
-import "github.com/dairovolzhas/dar-internship/task2/passwordStrength"
-
-var (
-	regex = `.`
+import (
+	"fmt"
+	"github.com/dairovolzhas/dar-internship/task2/passwordStrength"
 )
-// password strength levels
 
 func main() {
+
+
 	config := passwordStrength.Config{
-		RegExpReq: map[string]int{
-			``:3,
+		RegExps: map[string]int{
+			`[[:alpha:]]{8,}`:1,
 		},
+		SearchInDictionary: true,
 	}
-	passwordStrength.LoadDict()
-	passwordStrength.PasswordStrength("asdfasfdas", config)
+	ps := passwordStrength.NewPasswordStrength(config)
+	for {
+		var s string
+		fmt.Print("Type password:\n")
+		fmt.Scanf("%s", &s)
+		fmt.Println(ps.Calc(s))
+	}
 
 }

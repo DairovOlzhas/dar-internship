@@ -2,9 +2,7 @@ package passwordStrength
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"regexp"
@@ -13,71 +11,126 @@ import (
 )
 
 var (
-	// errors
 	pathToDict			   = "dictionary.txt"
-	dictionary             []string
-	SameWithUserInputError = errors.New("Password too same with user inputs!")
-	ExistInDictError       = errors.New("Password exist in dictionary!")
 )
 
-// password strength level
+// password strength levels
 const (
-	VERYWEAK   = 0
-	WEAK       = 1
-	REASONABLE = 2
-	STRONG	   = 3
-	VERYSTRONG = 4
+	VeryWeak   = 0
+	Weak       = 1
+	Reasonable = 2
+	Strong     = 3
+	VeryStrong = 4
 )
-
-type Config struct {
-	UserInputs           []string
-	minDistFromInputs    int
-	RegExpReq            map[string]int
-	NotExistInDictionary bool
+// NewPasswordStrength returns passwordStrength class
+func NewPasswordStrength(config Config) PasswordStrength {
+	ps := PasswordStrength{
+		config:     config,
+		pathToDict: pathToDict,
+	}
+	return ps
 }
 
-func PasswordStrength(password string, config Config) (int, error) {
+// Calc returns password strength.
+// 0 - Very Weak; 	might keep out family members
+// 1 - Weak; 		should keep out most people, often good for desktop login passwords
+// 2 - Reasonable; 	fairly secure passwords for network and company passwords
+// 3 - Strong; 		can be good for guarding financial information
+// 4 - Very Strong; often overkill.
+func (ps PasswordStrength) Calc(password string) (int, error) {
 	maxScore := 0
 	score := 0
 
-	for i, regex := range config.RegExpReq {
-		maxScore+=regex
-		re := regexp.MustCompile(i)
-		if re.MatchString(password) {
-			score+=regex
-		}
-	}
-
-	for _, input := range config.UserInputs {
+	// For loop calculates how far the password is from user inputs.
+	for _, input := range ps.config.UserInputs {
 		maxScore += len(input)
 		d := dist(password, input)
-		if d > config.minDistFromInputs {
-			return 0, SameWithUserInputError
+
+		// Has password required distance from user input?
+		if d < ps.config.MinEditDistFromInputs {
+			return Weak, nil
 		}
 		score += len(password) - d
 	}
 
-	if config.NotExistInDictionary && inDict(password) {
-		return 0, ExistInDictError
+	for regex, points := range ps.config.RegExps {
+		re := regexp.MustCompile(regex)
+		maxScore+=points
+		if re.MatchString(password) { // if password matches regexp
+			score += points
+		} else if points == 0 { // if password doesn't match regexp and it's must required regexp
+			return Weak, nil
+		} // if password doesn't match regexp and regexp is not required then nothing happens
 	}
 
-	strength := (100*score/maxScore + entropy(password)/4)/2
+	if ps.config.SearchInDictionary {
+		if !ps.dictLoaded {
+			err := ps.loadDict()
+			if err != nil {
+				return 0, err
+			}
+		}
+		if ps.inDict(password) {
+			return Weak, nil
+		}
+	}
+
+	entropy := ps.entropy(password)
+	strength := (100*score/maxScore + 100*entropy/4)/2 // calculating percentage
 
 	switch  {
 	case strength > 90:
-		return VERYSTRONG, nil
+		return VeryStrong, nil
 	case strength > 75:
-		return STRONG, nil
+		return Strong, nil
 	case strength > 50:
-		return REASONABLE, nil
+		return Reasonable, nil
 	case strength > 25:
-		return WEAK, nil
+		return Weak, nil
 	default:
-		return VERYWEAK, nil
+		return VeryWeak, nil
 	}
 }
 
-func entropy(password string) int {
+// Loads dictionary from txt file located in pathToDict
+func (ps PasswordStrength) loadDict() error {
+	file, err := os.Open(pathToDict)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		ps.dictionary = append(ps.dictionary, scanner.Text())
+	}
+	sort.Strings(ps.dictionary)
+
+	return nil
+}
+
+// inDict returns password existence in dictionary
+func (ps PasswordStrength) inDict(pass string) bool {
+	l,r := 0, len(ps.dictionary)-1
+
+	for l <= r {
+		m := (l+r)/2
+		if ps.dictionary[m] > pass {
+			r = m - 1
+		}else if ps.dictionary[m] < pass {
+			l = m + 1
+		}else{
+			return true
+		}
+	}
+	return false
+}
+
+// entropy returns password strength based on entropy.
+// Password entropy is a measurement of how unpredictable a password is.
+// More information at https://www.pleacher.com/mp/mlessons/algebra/entropy2.html
+func (ps PasswordStrength) entropy(password string) int {
 	poolSize := 0
 	digit, lower, upper, symbol := false, false, false, false
 	for _, c := range password {
@@ -102,71 +155,47 @@ func entropy(password string) int {
 	entropy := (math.Log2(float64(poolSize)))*float64(len(password))
 	switch  {
 	case entropy < 28:
-		return VERYWEAK
+		return VeryWeak
 	case entropy < 36:
-		return WEAK
+		return Weak
 	case entropy < 60:
-		return REASONABLE
+		return Reasonable
 	case entropy < 127:
-		return STRONG
+		return Strong
 	default:
-		return VERYSTRONG
+		return VeryStrong
 	}
 }
 
-func LoadDict(){
-	file, err := os.Open(pathToDict)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-
-	for scanner.Scan() {
-		dictionary = append(dictionary, scanner.Text())
-	}
-	sort.Strings(dictionary)
-}
-
-func inDict(pass string) bool {
-	l,r := 0, len(dictionary)-1
-
-	for l <= r {
-		m := (l+r)/2
-		if dictionary[m] > pass {
-			l = m + 1
-		}else if dictionary[m] < pass {
-			r = m - 1
-		}else{
-			return true
-		}
-	}
-	return false
-}
-
-func dist(a,b string) int {
+// Returns edit distance between two strings.
+// Edit distance is minimum number of edits(operations)
+// required to convert 'str1' into 'str2'. Operations:
+// - Insert
+// - Remove
+// - Replace
+func dist(str1, str2 string) int {
 	dp := [][]int{}
-	for i:=0; i <= len(a); i++ {
+	for i:=0; i <= len(str1); i++ {
 		row := []int{}
-		for j:=0; j <= len(b); j++ {
+		for j:=0; j <= len(str2); j++ {
 			row = append(row, 0)
 		}
 		dp = append(dp, row)
 	}
 	fmt.Println(len(dp), len(dp[0]))
-	for i:=0; i <= len(a); i++ {
-		for j:=0; j <= len(b); j++ {
+	for i:=0; i <= len(str1); i++ {
+		for j:=0; j <= len(str2); j++ {
 			if min(i,j) == 0 {
 				dp[i][j] = j+i
-			}else if a[i-1] == b[j-1] {
+			}else if str1[i-1] == str2[j-1] {
 				dp[i][j] = dp[i-1][j-1]
 			}else{
 				dp[i][j] = 1 + min(dp[i][j-1], min(dp[i-1][j], dp[i-1][j-1]))
 			}
 		}
 	}
-	return dp[len(a)][len(b)]
+	return dp[len(str1)][len(str2)]
 }
 
 func min(a,b int) int {
