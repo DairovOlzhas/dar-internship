@@ -163,7 +163,7 @@ var testCases = []struct{
 		},
 		password: "123456",
 		userInputs: []string{"123455"},
-		expected: 3,
+		expected: 4,
 	},
 	{
 		name: "14",
@@ -211,6 +211,25 @@ var testCases = []struct{
 		},
 		password: "",
 		userInputs: []string{},
+		expected: 4,
+	},
+	{
+		name: "19",
+		config: Config{
+			MinEditDistFromInputs: 0,
+			RegExps: map[string]int{
+				`[[:ascii:]]{8,}`:0,
+				`[[:digit:]]{1,}`:0,
+				`[[:upper:]]{1,}`:0,
+				`[[:lower:]]{1,}`:0,
+				`[[:punct:]]{1,}`:10,
+			},
+			SearchInDictionary: true,
+			Entropy: true,
+			PathToDict: "dictionary.txt",
+		},
+		password: "abraKaD0bra_.,%qwertyasdfghjl",
+		userInputs: []string{"example@example.com", "username", "surname", "01081970", "87771234567"},
 		expected: 4,
 	},
 }

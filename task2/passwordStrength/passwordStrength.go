@@ -2,6 +2,7 @@ package passwordStrength
 
 import (
 	"bufio"
+	"log"
 	"math"
 	"os"
 	"regexp"
@@ -54,13 +55,10 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 	var strength = 0
 	// For loop calculates how far the password is from user inputs.
 	for _, input := range userInputs {
-		maxScore += len(input)
 		distance := dist(password, input)
-
 		if distance < ps.config.MinEditDistFromInputs {
 			return VeryWeak, nil
 		}
-		score += len(password) - distance
 	}
 
 	for regex, points := range ps.config.RegExps {
@@ -72,7 +70,7 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 			return VeryWeak, nil
 		} // if password doesn't match regexp and regexp is not required then nothing happens
 	}
-
+	log.Println(score, maxScore)
 	if maxScore > 0 {
 		maxStrength += 4
 		switch {
@@ -210,6 +208,12 @@ func dist(str1, str2 string) int {
 
 func min(a,b int) int {
 	if a > b {
+		return b
+	}
+	return a
+}
+func max(a,b int) int {
+	if a < b {
 		return b
 	}
 	return a
