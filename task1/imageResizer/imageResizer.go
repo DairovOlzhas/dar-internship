@@ -27,6 +27,7 @@ var (
 
 // image formats
 const (
+	JPG = "jpg"
 	JPEG = "jpeg"
 	PNG = "png"
 )
@@ -45,7 +46,11 @@ func NewImageResizer(file io.Reader, fileName string, fileSize int64) (ir *Image
 	// Determine image format and decode.
 	switch  {
 	case strings.HasSuffix(fileName, ".jpeg") || strings.HasSuffix(fileName, ".jpg"):
-		ir.imageFormat = JPEG
+		if strings.HasSuffix(fileName, ".jpeg"){
+			ir.imageFormat = JPEG
+		} else {
+			ir.imageFormat = JPG
+		}
 		ir.fileName = fileName[:len(fileName)-len(ir.imageFormat)-1]
 		ir.originalImg, err = jpeg.Decode(file)
 		if err != nil {

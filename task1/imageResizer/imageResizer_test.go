@@ -84,7 +84,7 @@ func TestNewImageResizer(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ir, err := NewImageResizer(file, file.Name(), fi.Size())
+			_, err = NewImageResizer(file, file.Name(), fi.Size())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,7 +97,6 @@ func TestNewImageResizer(t *testing.T) {
 func BenchmarkNewImageResizer(b *testing.B) {
 	for _, bm := range testImages {
 		b.Run(bm.name, func(b *testing.B) {
-			b.StopTimer()
 			b.ResetTimer()
 
 			for i:=0; i < b.N; i++ {
