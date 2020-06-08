@@ -2,7 +2,6 @@ package passwordStrength
 
 import (
 	"bufio"
-	"log"
 	"math"
 	"os"
 	"regexp"
@@ -70,7 +69,7 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 			return VeryWeak, nil
 		} // if password doesn't match regexp and regexp is not required then nothing happens
 	}
-	log.Println(score, maxScore)
+
 	if maxScore > 0 {
 		maxStrength += 4
 		switch {
