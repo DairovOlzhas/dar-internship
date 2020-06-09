@@ -19,7 +19,7 @@ const (
 )
 
 
-// NewPasswordStrength returns passwordStrength class.
+// NewPasswordStrength returns pointer to passwordStrength class object.
 func NewPasswordStrength(config Config) *PasswordStrength {
 	ps := &PasswordStrength{
 		config:     config,
@@ -67,7 +67,8 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 			score += points
 		} else if points == 0 { // if password doesn't match regexp and it's must required regexp
 			return VeryWeak, nil
-		} // if password doesn't match regexp and regexp is not required then nothing happens
+		}
+		// if password doesn't match regexp and regexp is not required then nothing happens
 	}
 
 	if maxScore > 0 {
@@ -182,6 +183,12 @@ func (ps *PasswordStrength) inDict(pass string) bool {
 // - Remove
 // - Replace
 func dist(str1, str2 string) int {
+	if max(len(str1), len(str2)) > 200 {
+		if str1 == str2 {
+			return 0
+		}
+		return max(len(str1), len(str2))
+	}
 	dp := [][]int{}
 	for i:=0; i <= len(str1); i++ {
 		row := []int{}

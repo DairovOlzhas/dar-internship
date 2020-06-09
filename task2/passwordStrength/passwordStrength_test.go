@@ -1,6 +1,7 @@
 package passwordStrength
 
 import (
+	"math/rand"
 	"testing"
 )
 
@@ -232,6 +233,25 @@ var testCases = []struct{
 		userInputs: []string{"example@example.com", "username", "surname", "01081970", "87771234567"},
 		expected: 4,
 	},
+	{
+		name: "bigtest",
+		config: Config{
+			MinEditDistFromInputs: 0,
+			RegExps: map[string]int{
+				`[[:ascii:]]{8,}`:0,
+				`[[:digit:]]{1,}`:0,
+				`[[:upper:]]{1,}`:0,
+				`[[:lower:]]{1,}`:0,
+				`[[:punct:]]{1,}`:10,
+			},
+			SearchInDictionary: true,
+			Entropy: true,
+			PathToDict: "dictionary.txt",
+		},
+		password: genLongPass(201),
+		userInputs: []string{"example@example.com", "username", "surname", "01081970", "87771234567"},
+		expected: 4,
+	},
 }
 
 func TestPasswordStrength_Calc(t *testing.T) {
@@ -268,4 +288,14 @@ func BenchmarkPasswordStrength_Calc(b *testing.B) {
 			}
 		})
 	}
+}
+
+
+func genLongPass(length int) string{
+	var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+	res := ""
+	for i:=0; i < length; i++ {
+		res += string(chars[rand.Int()%len(chars)])
+	}
+	return res
 }
