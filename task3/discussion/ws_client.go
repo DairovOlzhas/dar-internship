@@ -24,11 +24,13 @@ const (
 	maxMessageSize = 64 * 1024
 )
 
+// DataPacket is format of data which sent over websocket.
 type DataPacket struct {
 	Type string      `json:"type,omitempty"`
 	Data interface{} `json:"data,omitempty"`
 }
 
+// ClientConnection is some single client connected over websocket.
 type ClientConnection interface {
 	Start() error
 	Stop()
@@ -88,6 +90,7 @@ func (c *client) DataChan() chan interface{} {
 	return c.dataCh
 }
 
+// readPump is loop which reads messages from client until connection closed
 func (c *client) readPump() error {
 	defer c.Stop()
 	c.ws.SetReadLimit(maxMessageSize)
@@ -133,6 +136,7 @@ func (c *client) readPump() error {
 	}
 }
 
+// writePump is loop which writes messages to client until connection closed
 func (c *client) writePump() error {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -174,6 +178,8 @@ func (c *client) writePump() error {
 	}
 }
 
+// writeMsg writes message to client and have writeWait limited duration
+// to write message
 func (c *client) writeMsg(messageType int, msg interface{}) error {
 	if !c.closed {
 		err := c.ws.SetWriteDeadline(time.Now().Add(writeWait))
@@ -196,6 +202,8 @@ func (c *client) writeMsg(messageType int, msg interface{}) error {
 	return ErrConnClosed
 }
 
+// readMsg reads message from client and have pongWait limited duration
+// to read message
 func (c *client) readMsg() ([]byte, error) {
 	err := c.ws.SetReadDeadline(time.Now().Add(pongWait))
 	if err != nil {

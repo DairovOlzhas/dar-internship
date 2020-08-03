@@ -88,7 +88,7 @@ func (hub *Hub) RegisterInHub(userId string, client ClientConnection) {
 	hub.userClients[userId][client] = true
 }
 
-// Register adds a client to the discussion hub
+// RegisterInDiscussion adds a client to the discussion hub
 func (hub *Hub) RegisterInDiscussion(userId string, discussionId int64, client ClientConnection) {
 	dHub := hub.getOrCreateDiscussionHub(discussionId)
 	if _, ok := dHub.userClients[userId]; !ok {

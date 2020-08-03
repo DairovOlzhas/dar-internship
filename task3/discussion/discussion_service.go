@@ -12,8 +12,6 @@ type Service interface {
 	Create(discussion *Discussion) (*Discussion, error)
 	Delete(id int64) error
 	Update(id int64, upd *Update) error
-	//MakeInactive(id int64) error
-	//MakeActive(id int64) error
 
 	StartDiscussions(userId string, conn *websocket.Conn) error
 	StartDiscussion(userId string, discussionId int64, conn *websocket.Conn) error
@@ -34,12 +32,6 @@ type Service interface {
 
 	DecrementUnreadMessagesCnt(participant *Participant) error
 	IncrementUnreadMessagesCnt(participant *Participant) error
-
-	//BlockUser(string, int64) error
-	//UnblockUser(string, int64) error
-
-	//SendViolation(*Violation) error
-	//GetViolations(params *htp.ListParams) ([]*Violation, error)
 }
 
 type svc struct {
@@ -235,47 +227,3 @@ func (svc *svc) DecrementUnreadMessagesCnt(participant *Participant) error {
 func (svc *svc) IncrementUnreadMessagesCnt(participant *Participant) error {
 	return svc.repo.IncrementUnreadMessagesCnt(participant)
 }
-
-//func (svc *svc) MakeInactive(id int64) error {
-//	upd := &Update{}
-//	*upd.IsActive = false
-//	return svc.repo.Update(id, upd)
-//}
-//
-//func (svc *svc) MakeActive(id int64) error {
-//	upd := &Update{}
-//	*upd.IsActive = true
-//	return svc.repo.Update(id, upd)
-//}
-//
-//func (svc *svc) SendViolation(violation *Violation) error {
-//	return svc.repo.CreateViolation(violation)
-//}
-//
-//func (svc *svc) GetViolations(params *htp.ListParams) ([]*Violation, error) {
-//	return svc.repo.GetViolations(params)
-//}
-//
-//func (svc *svc) BlockUser(requestingUserId string, discussionId int64) error {
-//	discussion, err := svc.repo.FindByID(discussionId)
-//	if err != nil {
-//		return err
-//	}
-//	if *discussion.SenderID != requestingUserId {
-//		return ErrNoPermission
-//	}
-//	upd := &Update{}
-//	return svc.repo.Update(discussionId, upd)
-//}
-//
-//func (svc *svc) UnblockUser(requestingUserId string, discussionId int64) error {
-//	discussion, err := svc.repo.FindByID(discussionId)
-//	if err != nil {
-//		return err
-//	}
-//	if *discussion.SenderID != requestingUserId {
-//		return ErrNoPermission
-//	}
-//	upd := &Update{}
-//	return svc.repo.Update(discussionId, upd)
-//}

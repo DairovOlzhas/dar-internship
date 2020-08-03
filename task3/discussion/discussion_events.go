@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 )
 
+// Event is determines methods of event types sending over websocket.
 type Event interface {
 	IsMyInstance(data []byte, instance interface{}) (interface{}, bool)
 	WriteProcess(instance interface{}) *DataPacket

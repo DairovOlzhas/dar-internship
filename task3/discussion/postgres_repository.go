@@ -3,6 +3,8 @@ package discussion
 import (
 	"database/sql"
 	"fmt"
+	htp "git.dar.tech/dareco-go/http"
+	"git.dar.tech/dareco-go/utils/postgres"
 	log "github.com/sirupsen/logrus"
 	"strconv"
 	"strings"
@@ -104,37 +106,59 @@ func NewPostgresRepoWithDB(db *sql.DB) (Repository, error) {
 	var discussionsTableName = "tutor_discussions"
 	var violationsTable = "tutor_discussion_violations"
 	var messageRepoQueries = []string{
-		`CREATE TABLE IF NOT EXISTS ` + discussionsTableName + ` (
-			id serial PRIMARY KEY,
-			from_id VARCHAR(255),
-			to_id VARCHAR(255),
-			course_id INTEGER NOT NULL default 0,
-			is_active BOOLEAN default true,
-			unread_messages_cnt INTEGER NOT NULL default 0,
-			time TIMESTAMPTZ default now(),
-			UNIQUE (from_id, to_id, course_id)
-		)`,
-		`CREATE TABLE IF NOT EXISTS tutor_discussion_messages (
-			id serial PRIMARY KEY,
-			from_id VARCHAR(255) NOT NULL,
-			to_id VARCHAR(255),
-			course_id INTEGER,
-			text TEXT,
-			file_path TEXT,
-			is_read BOOLEAN NOT NULL default false,
-			sent_time TIMESTAMPTZ default now()
-		);`,
-		//`CREATE TABLE IF NOT EXISTS ` + violationsTable + ` (
-		//	id serial PRIMARY KEY,
-		//	sender_id VARCHAR(255) NOT NULL,
-		//	discussion_id INTEGER NOT NULL,
-		//	text TEXT NOT NULL
-		//);`,
-		`CREATE TABLE IF NOT EXISTS tutor_discussion_files (
-			id serial PRIMARY KEY,
-			owner_id VARCHAR(255) NOT NULL,
-			file_path VARCHAR(255) NOT NULL
-		);`,
+		`create table tutor_discussions
+(
+    id        serial                                 not null
+        constraint tutor_discussions_pkey
+            primary key,
+    is_active boolean                  default true,
+    time      timestamp with time zone default now(),
+    name      varchar(255),
+    is_group  boolean                  default false not null,
+    photo     varchar(255),
+    constraint tutor_discussions_check
+        check ((((name)::text <> ''::text) AND (name IS NOT NULL)) OR (NOT is_group))
+);`,
+		`create table tutor_discussion_messages
+(
+    id            serial                                 not null
+        constraint tutor_discussion_messages_pkey
+            primary key,
+    text          text,
+    file_path     text,
+    is_read       boolean                  default false not null,
+    sent_time     timestamp with time zone default now(),
+    sender_id     varchar(255),
+    discussion_id integer                                not null,
+    constraint tutor_discussion_messages_sender_id_fkey
+        foreign key (sender_id, discussion_id) references tutor_discussion_participants (user_id, discussion_id)
+            on delete cascade
+);`,
+		`create table tutor_discussion_participants
+(
+    user_id             varchar(255) default 'deleted'::character varying not null
+        constraint tutor_discussion_participants_user_id_fkey
+            references tutor_users
+            on delete set default,
+    discussion_id       integer                                           not null
+        constraint tutor_discussion_participants_discussion_id_fkey
+            references tutor_discussions
+            on delete cascade,
+    unread_messages_cnt integer      default 0                            not null,
+    constraint tutor_discussion_participants_pkey
+        primary key (discussion_id, user_id)
+);`, `
+	create table tutor_discussion_files
+(
+    id        serial       not null
+        constraint tutor_discussion_files_pkey
+            primary key,
+    owner_id  varchar(255) not null
+        constraint tutor_discussion_files_owner_id_fkey
+            references tutor_users,
+    file_path varchar(255) not null
+);
+`,
 	}
 	var err error
 	for _, q := range messageRepoQueries {
@@ -713,118 +737,3 @@ func (repo *discussionRepo) DecrementUnreadMessagesCnt(participant *Participant)
 	}
 	return nil
 }
-
-//func (repo *discussionRepo) CreateViolation(item *Violation) error {
-//	q := `
-//		INSERT INTO ` + repo.violationsTable + `
-//			(sender_id, discussion_id, text)
-//			VALUES ($1, $2, $3)
-//		`
-//	_, err := repo.db.Query(q,
-//		item.SenderId,
-//		item.DiscussionId,
-//		item.Text,
-//	)
-//	if err != nil {
-//		return ErrViolationCreation
-//	}
-//	return nil
-//}
-//
-//func (repo *discussionRepo) GetViolations(params *http.ListParams) ([]*Violation, error) {
-//	items := []*Violation{}
-//	q := `SELECT
-//			violations.id AS id,
-//			violations.sender_id AS sender_id,
-//			users.first_name AS sender_first_name,
-//			users.last_name AS sender_last_name,
-//			violations.discussion_id AS discussion_id,
-//			violations.text AS text
-//		  FROM ` + repo.violationsTable + ` AS violations
-//		  	LEFT JOIN tutor_users AS users
-//			ON violations.sender_id = users.id `
-//	parts := []string{}
-//	values := []interface{}{}
-//	cnt := 0
-//	if senderId, ok := params.Query["sender_id"]; ok {
-//		cnt++
-//		parts = append(parts, "sender_id = $"+strconv.Itoa(cnt))
-//		values = append(values, senderId)
-//	}
-//	if discussionId, ok := params.Query["discussion_id"]; ok {
-//		cnt++
-//		parts = append(parts, "discussion_id = $"+strconv.Itoa(cnt))
-//		values = append(values, discussionId)
-//	}
-//	if senderFirstName, ok := params.Query["sender_first_name"]; ok {
-//		cnt++
-//		parts = append(parts, "sender_first_name = $"+strconv.Itoa(cnt))
-//		values = append(values, senderFirstName)
-//	}
-//	if senderLastName, ok := params.Query["sender_last_name"]; ok {
-//		cnt++
-//		parts = append(parts, "sender_last_name = $"+strconv.Itoa(cnt))
-//		values = append(values, senderLastName)
-//	}
-//	if len(values) > 0 {
-//		q = q + " WHERE "
-//	}
-//	q = q + strings.Join(parts, " AND ")
-//	rows, err := repo.db.Query(q, values...)
-//	if err != nil {
-//		return nil, err
-//	}
-//	for rows.Next() {
-//		item := &Violation{}
-//		err = rows.Scan(
-//			&item.ID,
-//			&item.SenderId,
-//			&item.SenderFirstName,
-//			&item.SenderLastName,
-//			&item.DiscussionId,
-//			&item.Text,
-//		)
-//		if err != nil {
-//			return nil, err
-//		}
-//		items = append(items, item)
-//	}
-//	return items, nil
-//}
-//
-//func (repo *discussionRepo) FindLastMessage(fromId *string, toId *string, lessonId *int64) (*Message, error) {
-//	q := `SELECT
-//			id,
-//			from_id,
-//			to_id,
-//			course_id,
-//			text,
-//	 		image_URI,
-//			file_URI,
-//			is_read,
-//			sent_time
-//		FROM ` + repo.messagesTableName + `
-//			WHERE `
-//
-//	if lessonId != nil {
-//		q = q + `course_id = $3 AND from_id != $1`
-//	} else {
-//		q = q + `from_id = $2 AND to_id = $1`
-//	}
-//
-//	q = q + `ORDER BY sent_time DESC limit 1`
-//	item := messageRow{}
-//	err := repo.db.QueryRow(q, fromId, toId, lessonId).Scan(
-//		&item.ID,
-//		&item.SenderID,
-//		&item.ToId,
-//		&item.CourseId,
-//		&item.Text,
-//		&item.IsRead,
-//		&item.SentTime,
-//	)
-//	if err != nil {
-//		return nil, err
-//	}
-//	return item.toMessage(), nil
-//}

@@ -22,6 +22,4 @@ type Repository interface {
 	RemoveParticipant(participant *Participant) error
 	DecrementUnreadMessagesCnt(participant *Participant) error
 	IncrementUnreadMessagesCnt(participant *Participant) error
-	//CreateViolation(item *Violation) error
-	//GetViolations(params *http.ListParams) ([]*Violation, error)
 }
