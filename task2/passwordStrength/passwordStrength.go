@@ -59,7 +59,6 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 	for _, input := range userInputs {
 		distance := dist(password, input)
 		if distance < ps.config.MinEditDistFromInputs {
-			log.Printf("Distance between password and user inputs less than %v\n", ps.config.MinEditDistFromInputs)
 			return VeryWeak, nil
 		}
 	}
@@ -68,10 +67,8 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 		re := regexp.MustCompile(regex)
 		maxScore+=points
 		if re.MatchString(password) { // if password matches regexp
-			log.Printf("Password earned from `%v` regexp\n", regex)
 			score += points
 		} else if points == 0 { // if password doesn't match regexp and it's must required regexp
-			log.Printf("Password not match required `%v` regexp\n", regex)
 			return VeryWeak, nil
 		}
 		// if password doesn't match regexp and regexp is not required then nothing happens
@@ -92,11 +89,9 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 			strength = VeryStrong
 		}
 	}
-	log.Printf("Password earned from %v points out of %v\n", score, maxScore)
 	if ps.config.Entropy {
 		maxStrength += 4
 		entropy := ps.entropy(password)
-		log.Printf("Password %v points of entopy\n", entropy)
 		strength += entropy
 	}
 	if maxStrength == 0 {
