@@ -1,24 +1,27 @@
 package discussion
 
-import (
-	"git.dar.tech/dareco-go/http"
-)
+import htp "git.dar.tech/dareco-go/http"
 
-// Repository interacts with database and makes queries related to this package
 type Repository interface {
-	FindAll(query FindQuery, params *http.PaginationParams) ([]*Discussion, error)
-	FindByID(int64) (*Discussion, error)
-	Create(*Discussion) error
+	FindAll(query FindQuery) ([]*Discussion, error)
+	FindByID(id int64, userId string) (*Discussion, error)
+	Create(*Discussion) (*Discussion, error)
 	Update(id int64, upd *Update) error
 	Delete(id int64) error
 
-	FindAllMessages(query FindQuery) ([]*Message, error)
+	FindAllMessages(params *htp.ListParams) ([]*Message, error)
 	FindMessageByID(int64) (*Message, error)
 	CreateMessage(*Message) (*Message, error)
 	UpdateMessage(id int64, upd *UpdateMessage) error
-	DeleteMessages(fromId string, toId string, courseId int64) error
+	DeleteMessages(discussionId int64) error
 
 	CreateFile(*File) (*File, error)
 
-	ExecQuery(q string, values ...interface{}) error
+	GetParticipants(discussionId int64) ([]*Participant, error)
+	AddParticipant(participant *Participant) error
+	RemoveParticipant(participant *Participant) error
+	DecrementUnreadMessagesCnt(participant *Participant) error
+	IncrementUnreadMessagesCnt(participant *Participant) error
+	//CreateViolation(item *Violation) error
+	//GetViolations(params *http.ListParams) ([]*Violation, error)
 }

@@ -3,78 +3,105 @@ package discussion
 import (
 	"database/sql"
 	"fmt"
-	"git.dar.tech/dareco-go/http"
-	"git.dar.tech/dareco-go/utils/postgres"
 	log "github.com/sirupsen/logrus"
 	"strconv"
 	"strings"
 	"time"
 )
 
-type discussionRaw struct {
+type discussionRow struct {
 	ID                 int64          `json:"id,omitempty"`
-	FromId             sql.NullString `json:"from_id,omitempty"`
-	ToId               sql.NullString `json:"to_id,omitempty"`
-	CourseId           int64          `json:"course_id,omitempty"`
-	IsActive           bool           `json:"is_active:omitempty"`
-	UnreadMessagesCnt  int64          `json:"unread_messages_cnt:omitempty"`
+	IsActive           bool           `json:"is_active"`
+	IsGroup            bool           `json:"is_group"`
+	Name               sql.NullString `json:"name,omitempty"`
+	Photo              sql.NullString `json:"photo,omitempty"`
+	RecipientID        sql.NullString `json:"recipient_id,omitempty"`
 	RecipientFirstName sql.NullString `json:"recipient_first_name,omitempty"`
 	RecipientLastName  sql.NullString `json:"recipient_last_name,omitempty"`
-	CourseName         sql.NullString `json:"course_name,omitempty"`
+	RecipientPhoto     sql.NullString `json:"recipient_photo,omitempty"`
+	UnreadMessagesCnt  int64          `json:"unread_messages_cnt"`
+	SenderID           string         `json:"-"`
 	Time               time.Time      `json:"time,omitempty"`
 }
 
-func (item *discussionRaw) toDiscussion() *Discussion {
-	return &Discussion{
-		ID:                 item.ID,
-		FromId:             item.FromId.String,
-		ToId:               item.ToId.String,
-		CourseId:           item.CourseId,
-		IsActive:           item.IsActive,
-		UnreadMessagesCnt:  item.UnreadMessagesCnt,
-		RecipientFirstName: item.RecipientFirstName.String,
-		RecipientLastName:  item.RecipientLastName.String,
-		CourseName:         item.CourseName.String,
-		Time:               item.Time,
+func (item *discussionRow) toDiscussion() *Discussion {
+	discussion := &Discussion{
+		ID:                item.ID,
+		IsActive:          item.IsActive,
+		IsGroup:           item.IsGroup,
+		Name:              item.Name.String,
+		Photo:             item.Photo.String,
+		UnreadMessagesCnt: item.UnreadMessagesCnt,
+		SenderID:          item.SenderID,
+		Time:              item.Time,
+	}
+	if !item.IsGroup {
+		discussion.Recipient = &Participant{
+			ID:        item.RecipientID.String,
+			FirstName: item.RecipientFirstName.String,
+			LastName:  item.RecipientLastName.String,
+			Photo:     item.RecipientPhoto.String,
+		}
+	}
+	return discussion
+}
+
+type messageRow struct {
+	ID              int64          `json:"id"`
+	DiscussionID    int64          `json:"discussion_id"`
+	Text            sql.NullString `json:"text,omitempty"`
+	FilePath        sql.NullString `json:"file_path,omitempty"`
+	IsRead          bool           `json:"is_read"`
+	SentTime        time.Time      `json:"sent_time,omitempty"`
+	SenderID        string         `json:"sender_id,omitempty"`
+	SenderFirstName sql.NullString `json:"sender_first_name,omitempty"`
+	SenderLastName  sql.NullString `json:"sender_last_name,omitempty"`
+	SenderPhoto     sql.NullString `json:"sender_photo,omitempty"`
+}
+
+func (item *messageRow) toMessage() *Message {
+	return &Message{
+		ID:           item.ID,
+		DiscussionID: item.DiscussionID,
+		Text:         item.Text.String,
+		FilePath:     item.FilePath.String,
+		IsRead:       item.IsRead,
+		SentTime:     item.SentTime,
+		Sender: &Participant{
+			ID:        item.SenderID,
+			FirstName: item.SenderFirstName.String,
+			LastName:  item.SenderLastName.String,
+			Photo:     item.SenderPhoto.String,
+		},
 	}
 }
 
-type messageRaw struct {
-	ID         int64          `json:"id,omitempty"`
-	FromId     sql.NullString `json:"from_id,omitempty"`
-	ToId       sql.NullString `json:"to_id,omitempty"`
-	CourseId   int64          `json:"course_id,omitempty"`
-	Text       sql.NullString `json:"text,omitempty"`
-	FilePath   sql.NullString `json:"file_path,omitempty"`
-	IsRead     bool           `json:"is_read,omitempty"`
-	SentTime   time.Time      `json:"sent_time,omitempty"`
-	SenderName sql.NullString `json:"sender_name,omitempty"`
+type participantRow struct {
+	ID           string         `json:"id,omitempty"`
+	DiscussionID int64          `json:"discussion_id,omitempty"`
+	FirstName    sql.NullString `json:"first_name,omitempty"`
+	LastName     sql.NullString `json:"last_name,omitempty"`
+	Photo        sql.NullString `json:"photo,omitempty"`
 }
 
-func (item *messageRaw) toMessage() *Message {
-	return &Message{
-		ID:         item.ID,
-		FromId:     item.FromId.String,
-		ToId:       item.ToId.String,
-		CourseId:   item.CourseId,
-		Text:       item.Text.String,
-		FilePath:   item.FilePath.String,
-		IsRead:     item.IsRead,
-		SentTime:   item.SentTime,
-		SenderName: item.SenderName.String,
+func (item *participantRow) toParticipant() *Participant {
+	return &Participant{
+		ID:           item.ID,
+		DiscussionID: item.DiscussionID,
+		FirstName:    item.FirstName.String,
+		LastName:     item.LastName.String,
+		Photo:        item.Photo.String,
 	}
 }
 
 type discussionRepo struct {
 	db                   *sql.DB
 	discussionsTableName string
-	messagesTableName    string
 	violationsTable      string
 }
 
 func NewPostgresRepoWithDB(db *sql.DB) (Repository, error) {
 	var discussionsTableName = "tutor_discussions"
-	var messagesTableName = "tutor_discussion_messages"
 	var violationsTable = "tutor_discussion_violations"
 	var messageRepoQueries = []string{
 		`CREATE TABLE IF NOT EXISTS ` + discussionsTableName + ` (
@@ -87,7 +114,7 @@ func NewPostgresRepoWithDB(db *sql.DB) (Repository, error) {
 			time TIMESTAMPTZ default now(),
 			UNIQUE (from_id, to_id, course_id)
 		)`,
-		`CREATE TABLE IF NOT EXISTS ` + messagesTableName + ` (
+		`CREATE TABLE IF NOT EXISTS tutor_discussion_messages (
 			id serial PRIMARY KEY,
 			from_id VARCHAR(255) NOT NULL,
 			to_id VARCHAR(255),
@@ -119,7 +146,6 @@ func NewPostgresRepoWithDB(db *sql.DB) (Repository, error) {
 	return &discussionRepo{
 			db,
 			discussionsTableName,
-			messagesTableName,
 			violationsTable},
 		nil
 }
@@ -132,92 +158,80 @@ func NewPostgresRepo(cfg postgres.Config) (Repository, error) {
 	return NewPostgresRepoWithDB(db)
 }
 
-func (repo *discussionRepo) FindAll(query FindQuery, params *http.PaginationParams) ([]*Discussion, error) {
+func (repo *discussionRepo) FindAll(query FindQuery) ([]*Discussion, error) {
 	var items []*Discussion
 	q := `SELECT
-			discussions.id,
-			discussions.from_id AS from_id,
-			discussions.to_id AS to_id,
-			discussions.course_id AS course_id,
-			discussions.is_active AS is_active,
-			discussions.unread_messages_cnt,
-			users.first_name AS recipient_first_name,
-			users.last_name AS recipient_last_name, 
-			courses.name AS course_name,
-			discussions.time AS time
-		FROM ` + repo.discussionsTableName + ` AS discussions
-			LEFT JOIN tutor_courses AS courses
-			ON courses.id = discussions.course_id
-			LEFT JOIN tutor_users AS users
-			ON users.id = discussions.to_id`
+       discussions.id        AS id,
+       discussions.is_active AS is_active,
+       discussions.is_group  AS is_group,
+       discussions.time      AS time,
+       discussions.name      AS name,
+       discussions.photo     AS photo,
+       recipients.id         AS recipient_id,
+       recipients.first_name AS recipient_first_name,
+       recipients.last_name  AS recipient_last_name,
+       recipients.photo      AS recipient_photo,
+       participants.unread_messages_cnt AS unread_messages_cnt,
+       participants.user_id AS sender_id
+FROM tutor_discussions AS discussions
+         LEFT JOIN tutor_discussion_participants AS participants
+                   ON discussions.id = participants.discussion_id
+         LEFT JOIN tutor_discussion_participants AS recipient_ids
+                   ON discussions.id = recipient_ids.discussion_id
+                          AND discussions.is_group = false
+                          AND participants.user_id != recipient_ids.user_id
+        LEFT JOIN tutor_users AS recipients
+                    ON recipient_ids.user_id = recipients.id `
 
-	parts := []string{}
-	values := []interface{}{}
 	cnt := 0
-
-	if query.FromId != nil {
+	values := []interface{}{}
+	parts := []string{}
+	if query.DiscussionID != nil {
 		cnt++
-		parts = append(parts, "from_id = $"+strconv.Itoa(cnt))
-		values = append(values, *query.FromId)
+		parts = append(parts, "participants.discussion_id = $"+strconv.Itoa(cnt))
+		values = append(values, *query.DiscussionID)
 	}
-	if query.ToId != nil {
+	if query.SenderID != nil {
 		cnt++
-		parts = append(parts, "to_id = $"+strconv.Itoa(cnt))
-		values = append(values, *query.ToId)
+		parts = append(parts, "participants.user_id = $"+strconv.Itoa(cnt))
+		values = append(values, *query.SenderID)
 	}
-	if query.CourseId != nil {
+	if query.RecipientID != nil {
 		cnt++
-		parts = append(parts, "course_id = $"+strconv.Itoa(cnt))
-		values = append(values, *query.CourseId)
+		parts = append(parts, "recipients.id = $"+strconv.Itoa(cnt))
+		values = append(values, *query.RecipientID)
 	}
-	if query.IsActive != nil {
+	if query.IsGroup != nil {
 		cnt++
-		parts = append(parts, "is_active = $"+strconv.Itoa(cnt))
-		values = append(values, *query.IsActive)
+		parts = append(parts, "discussions.is_group = $"+strconv.Itoa(cnt))
+		values = append(values, *query.IsGroup)
 	}
-	if query.Time != nil {
-		cnt++
-		parts = append(parts, "time <= $"+strconv.Itoa(cnt))
-		values = append(values, *query.Time)
-	}
-	if query.RecipientFirstName != nil {
-		cnt++
-		parts = append(parts, "recipient_first_name = $"+strconv.Itoa(cnt))
-		values = append(values, *query.RecipientFirstName)
-	}
-	if query.RecipientLastName != nil {
-		cnt++
-		parts = append(parts, "recipient_last_name = $"+strconv.Itoa(cnt))
-		values = append(values, *query.RecipientLastName)
-	}
-	if query.CourseName != nil {
-		cnt++
-		parts = append(parts, "course_name = $"+strconv.Itoa(cnt))
-		values = append(values, *query.CourseName)
+	if len(values) <= 0 {
+		return []*Discussion{}, nil
+	} else {
+		q = q + ` WHERE `
 	}
 
-	if len(values) > 0 {
-		q = q + " WHERE "
-	}
 	q = q + strings.Join(parts, " AND ")
 	rows, err := repo.db.Query(q, values...)
 	if err != nil {
 		return nil, err
 	}
-
 	for rows.Next() {
-		item := &discussionRaw{}
+		item := discussionRow{}
 		err := rows.Scan(
 			&item.ID,
-			&item.FromId,
-			&item.ToId,
-			&item.CourseId,
 			&item.IsActive,
-			&item.UnreadMessagesCnt,
+			&item.IsGroup,
+			&item.Time,
+			&item.Name,
+			&item.Photo,
+			&item.RecipientID,
 			&item.RecipientFirstName,
 			&item.RecipientLastName,
-			&item.CourseName,
-			&item.Time,
+			&item.RecipientPhoto,
+			&item.UnreadMessagesCnt,
+			&item.SenderID,
 		)
 		if err != nil {
 			return nil, err
@@ -227,38 +241,44 @@ func (repo *discussionRepo) FindAll(query FindQuery, params *http.PaginationPara
 	return items, nil
 }
 
-func (repo *discussionRepo) FindByID(id int64) (*Discussion, error) {
-	item := &discussionRaw{}
-	err := repo.db.QueryRow(
-		`SELECT
-			discussions.id,
-			discussions.from_id,
-			discussions.to_id,
-			discussions.course_id,
-			discussions.is_active,
-			discussions.unread_messages_cnt,
-			users.first_name,
-			users.last_name,
-			courses.name,
-			discussions.time
-		FROM `+repo.discussionsTableName+` AS discussions
-			LEFT JOIN tutor_courses AS courses
-			ON courses.id = discussions.course_id
-			LEFT JOIN tutor_users AS users
-			ON users.id = discussions.to_id 
-		WHERE discussions.id = $1`,
-		id,
-	).Scan(
+func (repo *discussionRepo) FindByID(id int64, userId string) (*Discussion, error) {
+	item := &discussionRow{}
+	q := `SELECT
+       discussions.id        AS id,
+       discussions.is_active AS is_active,
+       discussions.is_group  AS is_group,
+       discussions.time      AS time,
+       discussions.name      AS name,
+       discussions.photo     AS photo,
+       recipients.id         AS recipient_id,
+       recipients.first_name AS recipient_first_name,
+       recipients.last_name  AS recipient_last_name,
+       recipients.photo      AS recipient_photo,
+       participants.unread_messages_cnt AS unread_messages_cnt,
+       participants.user_id AS sender_id
+FROM tutor_discussions AS discussions
+         LEFT JOIN tutor_discussion_participants AS participants
+                   ON discussions.id = participants.discussion_id
+         LEFT JOIN tutor_discussion_participants AS recipient_ids
+                   ON discussions.id = recipient_ids.discussion_id
+                          AND discussions.is_group = false
+                          AND participants.user_id != recipient_ids.user_id
+        LEFT JOIN tutor_users AS recipients
+                    ON recipient_ids.user_id = recipients.id 
+WHERE participants.discussion_id = $1 AND participants.user_id = $2 `
+	err := repo.db.QueryRow(q, id, userId).Scan(
 		&item.ID,
-		&item.FromId,
-		&item.ToId,
-		&item.CourseId,
 		&item.IsActive,
-		&item.UnreadMessagesCnt,
+		&item.IsGroup,
+		&item.Time,
+		&item.Name,
+		&item.Photo,
+		&item.RecipientID,
 		&item.RecipientFirstName,
 		&item.RecipientLastName,
-		&item.CourseName,
-		&item.Time,
+		&item.RecipientPhoto,
+		&item.UnreadMessagesCnt,
+		&item.SenderID,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
@@ -268,41 +288,36 @@ func (repo *discussionRepo) FindByID(id int64) (*Discussion, error) {
 	return item.toDiscussion(), nil
 }
 
-func (repo *discussionRepo) Create(item *Discussion) error {
+func (repo *discussionRepo) Create(item *Discussion) (*Discussion, error) {
 	q := `INSERT INTO ` + repo.discussionsTableName +
-		` (from_id, to_id, course_id, is_active, time)
-			VALUES ($1,$2,$3,default,default)
-			ON CONFLICT (from_id, to_id, course_id)
-			DO UPDATE SET from_id=excluded.from_id
-		RETURNING id`
-	var id int64
+		` (is_active, is_group, name, photo, time)
+			VALUES ($1,$2,$3,$4,$5)
+		RETURNING id,time`
 	err := repo.db.QueryRow(q,
-		item.FromId,
-		item.ToId,
-		item.CourseId).Scan(
-		&id,
+		item.IsActive,
+		item.IsGroup,
+		item.Name,
+		item.Photo,
+		time.Now(),
+	).Scan(
+		&item.ID,
+		&item.Time,
 	)
 	if err != nil {
-		return ErrDiscussionCreation
+		return nil, ErrDiscussionCreation
 	}
-	item.ID = id
-	return nil
+	return item, nil
 }
 
 func (repo *discussionRepo) Update(id int64, upd *Update) error {
 	if id == 0 {
 		return ErrUpdate
 	}
-	q := fmt.Sprintf("UPDATE %s SET", repo.discussionsTableName)
+	q := fmt.Sprintf("UPDATE %s SET ", repo.discussionsTableName)
 
 	parts := []string{}
 	values := []interface{}{}
 	cnt := 0
-	if upd.UnreadMessagesCnt != nil {
-		cnt++
-		parts = append(parts, "unread_messages_cnt = $"+strconv.Itoa(cnt))
-		values = append(values, *upd.UnreadMessagesCnt)
-	}
 	if upd.Time != nil {
 		cnt++
 		parts = append(parts, "time = $"+strconv.Itoa(cnt))
@@ -312,6 +327,16 @@ func (repo *discussionRepo) Update(id int64, upd *Update) error {
 		cnt++
 		parts = append(parts, "is_active = $"+strconv.Itoa(cnt))
 		values = append(values, *upd.IsActive)
+	}
+	if upd.Name != nil {
+		cnt++
+		parts = append(parts, "name = $"+strconv.Itoa(cnt))
+		values = append(values, *upd.Name)
+	}
+	if upd.Photo != nil {
+		cnt++
+		parts = append(parts, "photo = $"+strconv.Itoa(cnt))
+		values = append(values, *upd.Photo)
 	}
 	if len(parts) <= 0 {
 		return ErrNothingToUpdate
@@ -360,136 +385,156 @@ func (repo *discussionRepo) Delete(id int64) error {
 	return nil
 }
 
-func (repo *discussionRepo) FindAndUpdate(query FindQuery, upd *Update) error {
-	q := fmt.Sprintf("UPDATE %s SET ", repo.discussionsTableName)
-
-	var parts []string
-	var values []interface{}
-	cnt := 0
-	if upd.Time != nil {
-		cnt++
-		parts = append(parts, "time = $"+strconv.Itoa(cnt))
-		values = append(values, *upd.Time)
-	}
-	if upd.IsActive != nil {
-		cnt++
-		parts = append(parts, "is_active = $"+strconv.Itoa(cnt))
-		values = append(values, *upd.IsActive)
-	}
-
-	if len(parts) <= 0 {
-		return ErrNothingToUpdate
-	}
-	q = q + strings.Join(parts, " , ")
-
-	parts = []string{}
-
-	if *query.CourseId != 0 {
-		cnt++
-		parts = append(parts, "course_id = $"+strconv.Itoa(cnt))
-		values = append(values, *query.CourseId)
-	} else if *query.ToId != "" && *query.FromId != "" {
-		cnt++
-		parts = append(parts, fmt.Sprintf(
-			"((from_id = $%d AND to_id = $%d) OR (from_id = $%d AND to_id = $%d))",
-			cnt, cnt+1, cnt+1, cnt))
-		cnt++
-		values = append(values, *query.FromId, *query.ToId)
-	} else {
-		return ErrInvalidQuery
-	}
-	q = q + ` WHERE ` + strings.Join(parts, " AND ")
-
-	stmt, err := repo.db.Prepare(q)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if clsErr := stmt.Close(); clsErr != nil {
-			log.Warn(clsErr)
-		}
-	}()
-
-	ret, err := stmt.Exec(values...)
-	if err != nil {
-		return err
-	}
-	n, err := ret.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n <= 0 {
-		return ErrNotFound
-	}
-
-	return nil
-}
-
-func (repo *discussionRepo) CreateMessage(item *Message) (*Message, error) {
-	q := `
-		INSERT INTO ` + repo.messagesTableName + `
-			(from_id, to_id, course_id, text, file_path, is_read, sent_time) 
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id
-	`
-	var id int64
-	err := repo.db.QueryRow(q,
-		item.FromId,
-		item.ToId,
-		item.CourseId,
-		item.Text,
-		item.FilePath,
-		item.IsRead,
-		item.SentTime).Scan(&id)
-	if err != nil {
-		return nil, ErrMessageCreation
-	}
-	item.ID = id
-	return item, nil
-}
-
-func (repo *discussionRepo) FindMessageByID(id int64) (*Message, error) {
-	item := &messageRaw{}
-	err := repo.db.QueryRow(
-		`SELECT
+func (repo *discussionRepo) FindAllMessages(params *htp.ListParams) ([]*Message, error) {
+	items := []*Message{}
+	q := `SELECT
 			messages.id,
-			messages.from_id AS from_id,
-			messages.to_id AS to_id,
-			messages.course_id AS course_id,
+			messages.discussion_id,
 			messages.text,
 			messages.file_path,
 			messages.is_read,
 			messages.sent_time,
-			users.first_name
-		FROM `+repo.messagesTableName+` AS messages
+			users.id,
+			users.first_name,
+			users.last_name,
+			users.photo
+		FROM tutor_discussion_messages AS messages
 			LEFT JOIN tutor_users AS users
-			ON messages.from_id = users.id
-		WHERE messages.id = $1`,
-		id,
-	).Scan(
+			ON messages.sender_id = users.id 
+`
+	cnt := 0
+	parts := []string{}
+	values := []interface{}{}
+	if sentTime, ok := params.Query["sent_time"]; ok {
+		cnt++
+		parts = append(parts, "sent_time < $"+strconv.Itoa(cnt))
+		values = append(values, sentTime)
+	}
+	if discussionId, ok := params.Query["discussion_id"]; ok {
+		cnt++
+		parts = append(parts, "discussion_id = $"+strconv.Itoa(cnt))
+		values = append(values, discussionId)
+	}
+	if isRead, ok := params.Query["is_read"]; ok {
+		cnt++
+		parts = append(parts, "is_read = $"+strconv.Itoa(cnt))
+		values = append(values, isRead)
+	}
+	if senderId, ok := params.Query["sender_id"]; ok {
+		cnt++
+		parts = append(parts, "users.id = $"+strconv.Itoa(cnt))
+		values = append(values, senderId)
+	}
+	if len(values) > 0 {
+		q = q + ` WHERE `
+	} else {
+		return nil, ErrMessageNotFound
+	}
+	q = q + strings.Join(parts, " AND ") + ` ORDER BY messages.sent_time ASC `
+
+	if params.Limit() > 0 {
+		q += fmt.Sprintf(" LIMIT %d", params.Limit())
+	}
+	if params.Pagination.Page > 0 {
+		q += fmt.Sprintf(" OFFSET %d", params.Pagination.Page)
+	}
+
+	rows, err := repo.db.Query(q, values...)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		item := messageRow{}
+		err := rows.Scan(
+			&item.ID,
+			&item.DiscussionID,
+			&item.Text,
+			&item.FilePath,
+			&item.IsRead,
+			&item.SentTime,
+			&item.SenderID,
+			&item.SenderFirstName,
+			&item.SenderLastName,
+			&item.SenderPhoto,
+		)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item.toMessage())
+	}
+	for i:=0; i < len(items)/2; i++ {
+		items[i], items[len(items)-i-1] = items[len(items)-i-1], items[i]
+	}
+	return items, nil
+}
+
+func (repo *discussionRepo) FindMessageByID(id int64) (*Message, error) {
+	item := &messageRow{}
+	q := `SELECT
+			messages.id,
+			messages.discussion_id,
+			messages.text,
+			messages.file_path,
+			messages.is_read,
+			messages.sent_time,
+			users.id,
+			users.first_name,
+			users.last_name,
+			users.photo
+		FROM tutor_discussion_messages AS messages
+			LEFT JOIN tutor_users AS users
+			ON messages.sender_id = users.id
+		WHERE messages.id = $1`
+
+	err := repo.db.QueryRow(q, id).Scan(
 		&item.ID,
-		&item.FromId,
-		&item.ToId,
-		&item.CourseId,
+		&item.DiscussionID,
 		&item.Text,
 		&item.FilePath,
 		&item.IsRead,
 		&item.SentTime,
-		&item.SenderName,
+		&item.SenderID,
+		&item.SenderFirstName,
+		&item.SenderLastName,
+		&item.SenderPhoto,
 	)
 	if err == sql.ErrNoRows {
-		return nil, ErrNotFound
+		return nil, ErrMessageNotFound
 	} else if err != nil {
 		return nil, err
 	}
 	return item.toMessage(), nil
 }
 
+func (repo *discussionRepo) CreateMessage(item *Message) (*Message, error) {
+	q := `
+		INSERT INTO tutor_discussion_messages
+			(sender_id, discussion_id, text, file_path, is_read, sent_time) 
+			VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, sent_time
+	`
+	err := repo.db.QueryRow(q,
+		item.Sender.ID,
+		item.DiscussionID,
+		item.Text,
+		item.FilePath,
+		item.IsRead,
+		time.Now(),
+	).Scan(
+		&item.ID,
+		&item.SentTime,
+	)
+	if err != nil {
+		return nil, ErrMessageCreation
+	}
+	return item, nil
+}
+
 func (repo *discussionRepo) UpdateMessage(id int64, upd *UpdateMessage) error {
 	if id == 0 {
 		return ErrUpdate
 	}
-	q := fmt.Sprintf("UPDATE %s SET", repo.messagesTableName)
+	q := "UPDATE tutor_discussion_messages SET "
 
 	parts := []string{}
 	values := []interface{}{}
@@ -530,89 +575,14 @@ func (repo *discussionRepo) UpdateMessage(id int64, upd *UpdateMessage) error {
 		return err
 	}
 	if n <= 0 {
-		return ErrNotFound
+		return ErrMessageNotFound
 	}
 	return nil
 }
 
-func (repo *discussionRepo) FindAllMessages(query FindQuery) ([]*Message, error) {
-	var items []*Message
-	q := `SELECT
-			messages.id,
-			messages.from_id AS from_id,
-			messages.to_id AS to_id,
-			messages.course_id AS course_id,
-			messages.text,
-			messages.file_path,
-			messages.is_read,
-			messages.sent_time,
-			users.first_name
-		FROM ` + repo.messagesTableName + ` AS messages
-			LEFT JOIN tutor_users AS users
-			ON messages.from_id = users.id
-		WHERE `
-	cnt := 0
-	values := []interface{}{}
-	if *query.CourseId != 0 {
-		cnt++
-		q = q + `course_id = $1`
-		values = append(values, query.CourseId)
-	} else if *query.FromId != "" && *query.ToId != "" {
-		cnt+=2
-		q = q + `(from_id = $1 AND to_id = $2) OR (from_id = $2 AND to_id = $1)`
-		values = append(values, *query.FromId, *query.ToId)
-	} else {
-		return nil, ErrInvalidQuery
-	}
-	if query.NotFromId != nil {
-		cnt++
-		q = q + ` AND from_id != $`+strconv.Itoa(cnt)
-		values = append(values, *query.NotFromId)
-	}
-	if query.IsRead != nil {
-		cnt++
-		q = q + ` AND is_read != $`+strconv.Itoa(cnt)
-		values = append(values, *query.IsRead)
-	}
-	q = q + ` ORDER BY sent_time ASC `
-	rows, err := repo.db.Query(q, values...)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		item := messageRaw{}
-		err := rows.Scan(
-			&item.ID,
-			&item.FromId,
-			&item.ToId,
-			&item.CourseId,
-			&item.Text,
-			&item.FilePath,
-			&item.IsRead,
-			&item.SentTime,
-			&item.SenderName,
-		)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item.toMessage())
-	}
-	return items, nil
-}
-
-func (repo *discussionRepo) DeleteMessages(fromId string, toId string, courseId int64) error {
-	q := `DELETE FROM ` + repo.messagesTableName + ` WHERE `
-	values := []interface{}{}
-	if courseId != 0 {
-		q = q + `course_id = $1`
-		values = append(values, courseId)
-	} else if fromId != "" && toId != "" {
-		q = q + `(from_id = $1 AND to_id = $2) OR (from_id = $2 AND to_id = $1)`
-		values = append(values, fromId, toId)
-	} else {
-		return ErrInvalidQuery
-	}
-	_, err := repo.db.Query(q, values...)
+func (repo *discussionRepo) DeleteMessages(discussionId int64) error {
+	q := `DELETE FROM tutor_discussion_messages WHERE discussion_id = $1`
+	_, err := repo.db.Query(q, discussionId)
 	if err != nil {
 		return err
 	}
@@ -628,19 +598,233 @@ func (repo *discussionRepo) CreateFile(item *File) (*File, error) {
 	return item, nil
 }
 
-func (repo *discussionRepo) ExecQuery(q string, values ...interface{}) error {
-	stmt, err := repo.db.Prepare(q)
+func (repo *discussionRepo) GetParticipants(discussionId int64) ([]*Participant, error) {
+	items := []*Participant{}
+	q := `SELECT 
+				users.id,
+				participants.discussion_id,
+				users.first_name,
+				users.last_name,
+				users.photo
+			FROM tutor_discussion_participants AS participants
+				LEFT JOIN tutor_users AS users
+				ON users.id = participants.user_id 
+					WHERE participants.discussion_id = $1`
+	rows, err := repo.db.Query(q, discussionId)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		item := &participantRow{}
+		err := rows.Scan(
+			&item.ID,
+			&item.DiscussionID,
+			&item.FirstName,
+			&item.LastName,
+			&item.Photo,
+		)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item.toParticipant())
+	}
+	return items, nil
+}
+
+func (repo *discussionRepo) AddParticipant(participant *Participant) error {
+	var unreadMessagesCnt int64
+	q := `SELECT count(*) FROM tutor_discussion_messages 
+			WHERE discussion_id = $1 AND sender_id != $2 AND is_read = false`
+	err := repo.db.QueryRow(q, participant.DiscussionID, participant.ID).Scan(&unreadMessagesCnt)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := stmt.Close(); err != nil {
-			log.Warn(err)
-		}
-	}()
-	_, err = stmt.Exec(values...)
+
+	ret, err := repo.db.Exec(
+		`INSERT INTO tutor_discussion_participants (discussion_id, user_id, unread_messages_cnt) 
+					VALUES ($1, $2, $3)
+					ON CONFLICT DO NOTHING`,
+		participant.DiscussionID,
+		participant.ID,
+		unreadMessagesCnt,
+	)
 	if err != nil {
 		return err
+	}
+	n, err := ret.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n <= 0 {
+		return ErrParticipantExists
 	}
 	return nil
 }
+
+func (repo *discussionRepo) RemoveParticipant(participant *Participant) error {
+	ret, err := repo.db.Exec(
+		`DELETE FROM tutor_discussion_participants WHERE discussion_id = $1 AND user_id = $2`,
+		participant.DiscussionID,
+		participant.ID,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := ret.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n <= 0 {
+		return ErrParticipantNotFound
+	}
+	return nil
+}
+
+func (repo *discussionRepo) IncrementUnreadMessagesCnt(participant *Participant) error {
+	q := `UPDATE tutor_discussion_participants SET unread_messages_cnt = unread_messages_cnt + 1
+			WHERE discussion_id = $1 AND user_id = $2`
+	ret, err := repo.db.Exec(q, participant.DiscussionID, participant.ID)
+	if err != nil {
+		return err
+	}
+	n, err := ret.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n <= 0 {
+		return ErrParticipantUpdate
+	}
+	return nil
+}
+
+func (repo *discussionRepo) DecrementUnreadMessagesCnt(participant *Participant) error {
+	q := `UPDATE tutor_discussion_participants SET unread_messages_cnt = unread_messages_cnt - 1
+			WHERE discussion_id = $1 AND user_id = $2`
+	ret, err := repo.db.Exec(q, participant.DiscussionID, participant.ID)
+	if err != nil {
+		return err
+	}
+	n, err := ret.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n <= 0 {
+		return ErrParticipantUpdate
+	}
+	return nil
+}
+
+//func (repo *discussionRepo) CreateViolation(item *Violation) error {
+//	q := `
+//		INSERT INTO ` + repo.violationsTable + `
+//			(sender_id, discussion_id, text)
+//			VALUES ($1, $2, $3)
+//		`
+//	_, err := repo.db.Query(q,
+//		item.SenderId,
+//		item.DiscussionId,
+//		item.Text,
+//	)
+//	if err != nil {
+//		return ErrViolationCreation
+//	}
+//	return nil
+//}
+//
+//func (repo *discussionRepo) GetViolations(params *http.ListParams) ([]*Violation, error) {
+//	items := []*Violation{}
+//	q := `SELECT
+//			violations.id AS id,
+//			violations.sender_id AS sender_id,
+//			users.first_name AS sender_first_name,
+//			users.last_name AS sender_last_name,
+//			violations.discussion_id AS discussion_id,
+//			violations.text AS text
+//		  FROM ` + repo.violationsTable + ` AS violations
+//		  	LEFT JOIN tutor_users AS users
+//			ON violations.sender_id = users.id `
+//	parts := []string{}
+//	values := []interface{}{}
+//	cnt := 0
+//	if senderId, ok := params.Query["sender_id"]; ok {
+//		cnt++
+//		parts = append(parts, "sender_id = $"+strconv.Itoa(cnt))
+//		values = append(values, senderId)
+//	}
+//	if discussionId, ok := params.Query["discussion_id"]; ok {
+//		cnt++
+//		parts = append(parts, "discussion_id = $"+strconv.Itoa(cnt))
+//		values = append(values, discussionId)
+//	}
+//	if senderFirstName, ok := params.Query["sender_first_name"]; ok {
+//		cnt++
+//		parts = append(parts, "sender_first_name = $"+strconv.Itoa(cnt))
+//		values = append(values, senderFirstName)
+//	}
+//	if senderLastName, ok := params.Query["sender_last_name"]; ok {
+//		cnt++
+//		parts = append(parts, "sender_last_name = $"+strconv.Itoa(cnt))
+//		values = append(values, senderLastName)
+//	}
+//	if len(values) > 0 {
+//		q = q + " WHERE "
+//	}
+//	q = q + strings.Join(parts, " AND ")
+//	rows, err := repo.db.Query(q, values...)
+//	if err != nil {
+//		return nil, err
+//	}
+//	for rows.Next() {
+//		item := &Violation{}
+//		err = rows.Scan(
+//			&item.ID,
+//			&item.SenderId,
+//			&item.SenderFirstName,
+//			&item.SenderLastName,
+//			&item.DiscussionId,
+//			&item.Text,
+//		)
+//		if err != nil {
+//			return nil, err
+//		}
+//		items = append(items, item)
+//	}
+//	return items, nil
+//}
+//
+//func (repo *discussionRepo) FindLastMessage(fromId *string, toId *string, lessonId *int64) (*Message, error) {
+//	q := `SELECT
+//			id,
+//			from_id,
+//			to_id,
+//			course_id,
+//			text,
+//	 		image_URI,
+//			file_URI,
+//			is_read,
+//			sent_time
+//		FROM ` + repo.messagesTableName + `
+//			WHERE `
+//
+//	if lessonId != nil {
+//		q = q + `course_id = $3 AND from_id != $1`
+//	} else {
+//		q = q + `from_id = $2 AND to_id = $1`
+//	}
+//
+//	q = q + `ORDER BY sent_time DESC limit 1`
+//	item := messageRow{}
+//	err := repo.db.QueryRow(q, fromId, toId, lessonId).Scan(
+//		&item.ID,
+//		&item.SenderID,
+//		&item.ToId,
+//		&item.CourseId,
+//		&item.Text,
+//		&item.IsRead,
+//		&item.SentTime,
+//	)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return item.toMessage(), nil
+//}

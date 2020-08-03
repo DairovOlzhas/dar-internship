@@ -1,223 +1,186 @@
 package discussion
 
 import (
-	"git.dar.tech/dareco-go/utils/uuid"
-	"git.dar.tech/education/tutor/uploader"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
-	"strconv"
-	"sync"
 )
 
-// Service implements
 type Service interface {
 	GetUserDiscussions(userId string) ([]*Discussion, error)
-	CreateDiscussion(discussion *Discussion) (*Discussion, error)
-	DeleteDiscussion(id int64) error
+	GetDiscussionWith(senderId, recipientId string) (*Discussion, error)
+	FindByID(id int64, userId string) (*Discussion, error)
+	Create(discussion *Discussion) (*Discussion, error)
+	Delete(id int64) error
+	Update(id int64, upd *Update) error
+	//MakeInactive(id int64) error
+	//MakeActive(id int64) error
 
 	StartDiscussions(userId string, conn *websocket.Conn) error
 	StartDiscussion(userId string, discussionId int64, conn *websocket.Conn) error
 
 	AddFile(*FileRequest) (*File, error)
+
+
+	GetParticipants(discussionId int64) ([]*Participant, error)
+	AddParticipant(participant *Participant) error
+	RemoveParticipant(participant *Participant) error
+
+
+	FindAllMessages(params *htp.ListParams) ([]*Message, error)
+	FindMessageByID(int64) (*Message, error)
+	CreateMessage(*Message) (*Message, error)
+	UpdateMessage(id int64, upd *UpdateMessage) error
+	DeleteMessages(discussionId int64) error
+
+	DecrementUnreadMessagesCnt(participant *Participant) error
+	IncrementUnreadMessagesCnt(participant *Participant) error
+
+	//BlockUser(string, int64) error
+	//UnblockUser(string, int64) error
+
+	//SendViolation(*Violation) error
+	//GetViolations(params *htp.ListParams) ([]*Violation, error)
 }
 
 type svc struct {
 	hub      *Hub
 	repo     Repository
+	userRepo user.Repository
 	uploader uploader.Uploader
 }
 
-// NewService creates and returns Service interface.
-func NewService(hub *Hub, repo Repository, uploader uploader.Uploader) Service {
+func NewService(hub *Hub, repo Repository, uploader uploader.Uploader, userRepo user.Repository) Service {
 	return &svc{
 		hub:      hub,
 		repo:     repo,
+		userRepo: userRepo,
 		uploader: uploader,
 	}
 }
 
 func (svc *svc) GetUserDiscussions(userId string) ([]*Discussion, error) {
-	return svc.repo.FindAll(FindQuery{FromId: &userId}, nil)
+	return svc.repo.FindAll(FindQuery{SenderID: &userId})
 }
 
-func (svc *svc) CreateDiscussion(discussion *Discussion) (*Discussion, error) {
-	if discussion.FromId == "" || (discussion.ToId == "" && discussion.CourseId == 0) {
+func (svc *svc) GetDiscussionWith(userId, recipientId string) (*Discussion, error) {
+	isGroup := false
+	discussions, err := svc.repo.FindAll(
+		FindQuery{
+			SenderID:    &userId,
+			RecipientID: &recipientId,
+			IsGroup:     &isGroup,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(discussions) == 1 {
+		return discussions[0], nil
+	}
+	discussion := &Discussion{
+		ParticipantsIds: []string{userId, recipientId},
+	}
+	discussion, err = svc.Create(discussion)
+	if err != nil {
+		return nil, err
+	}
+	return svc.FindByID(discussion.ID, userId)
+}
+
+func (svc *svc) FindByID(id int64, userId string) (*Discussion, error) {
+	return svc.repo.FindByID(id, userId)
+}
+
+func (svc *svc) Create(discussion *Discussion) (*Discussion, error) {
+	participantIds := map[string]bool{}
+	for _, participantId := range discussion.ParticipantsIds {
+		participantIds[participantId] = true
+	}
+	if !discussion.IsGroup && len(participantIds) != 2 || discussion.IsGroup && discussion.Name == "" {
 		return nil, ErrInvalidDiscussion
 	}
-	err := svc.repo.Create(discussion)
+
+	discussion, err := svc.repo.Create(discussion)
 	if err != nil {
 		return nil, err
 	}
-	discussion, err = svc.repo.FindByID(discussion.ID)
-	if err != nil {
-		return nil, err
+	for participantId, _ := range participantIds {
+		u, err := svc.userRepo.FindByID(participantId)
+		if err != nil {
+			return nil, err
+		}
+		participant := &Participant{
+			ID:           u.ID,
+			DiscussionID: discussion.ID,
+			FirstName:    u.FirstName,
+			LastName:     u.LastName,
+			Photo:        u.Photo,
+		}
+		err = svc.repo.AddParticipant(participant)
+		if err != nil {
+			return nil, err
+		}
 	}
-	svc.hub.SendTo(discussion, "u"+discussion.FromId)
-	if discussion.ToId != "" {
-		rDiscussion := &Discussion{
-			FromId:   discussion.ToId,
-			ToId:     discussion.FromId,
-			CourseId: discussion.CourseId,
-			Time:     discussion.Time,
-		}
-		err := svc.repo.Create(rDiscussion)
-		if err != nil {
-			return nil, err
-		}
-		rDiscussion, err = svc.repo.FindByID(rDiscussion.ID)
-		if err != nil {
-			return nil, err
-		}
-		svc.hub.SendTo(rDiscussion, "u"+rDiscussion.FromId)
+	discussions, err := svc.repo.FindAll(FindQuery{
+		DiscussionID: &discussion.ID,
+	})
+	for _, d := range discussions {
+		svc.hub.SendToUserClients(d.SenderID, d)
 	}
 	return discussion, nil
 }
 
-func (svc *svc) DeleteDiscussion(id int64) error {
-	discussion, err := svc.repo.FindByID(id)
-	if err != nil {
-		return err
-	}
-	err = svc.repo.DeleteMessages(discussion.FromId, discussion.ToId, discussion.CourseId)
-	if err != nil {
-		return err
-	}
-	discussionsToDelete := []*Discussion{}
+func (svc *svc) Delete(id int64) error {
+	svc.hub.SendToDiscussion(id, DeleteDiscussionID(id))
+	return svc.repo.Delete(id)
+}
 
-	discussions, err := svc.repo.FindAll(FindQuery{FromId: &discussion.FromId, ToId: &discussion.ToId}, nil)
-	discussionsToDelete = append(discussionsToDelete, discussions...)
-
-	discussions, err = svc.repo.FindAll(FindQuery{FromId: &discussion.ToId, ToId: &discussion.FromId}, nil)
-	discussionsToDelete = append(discussionsToDelete, discussions...)
-
-	if discussion.CourseId != 0 {
-		discussions, err = svc.repo.FindAll(FindQuery{CourseId: &discussion.CourseId}, nil)
-		discussionsToDelete = append(discussionsToDelete, discussions...)
-	}
-	err = svc.repo.DeleteMessages(discussion.FromId, discussion.ToId, discussion.CourseId)
-	if err != nil {
-		return err
-	}
-	for _, discussion := range discussionsToDelete {
-		svc.hub.SendTo(discussionID(discussion.ID), "u"+discussion.FromId)
-		err := svc.repo.Delete(discussion.ID)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+func (svc *svc) Update(id int64, upd *Update) error {
+	return svc.repo.Update(id, upd)
 }
 
 func (svc *svc) StartDiscussions(userId string, conn *websocket.Conn) error {
 	log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
-	client := &Client{
-		ConnGroup: svc.hub.GetOrCreateConnGroup("u" + userId),
-		WsConn:    conn,
-		Send:      make(chan interface{}, 256),
-	}
-	client.DataTypes = []DataType{
-		&typeMessage{svc, userId},
-		&typeDiscussion{svc, userId, client},
-		&typeDeleteDiscussion{},
-		&typeReadMessages{userId, svc},
-	}
-	defer func() {
-		if !client.connClosed {
-			err := client.WsConn.Close()
-			if err != nil {
-				log.Errorf("Can't close websocket connection: %v", err)
-			}
-			client.connClosed = true
-		}
-	}()
-	client.ConnGroup.register <- client
+	client := NewClientConnection(
+		conn,
+		NewMessageEvent(svc.hub, svc, userId),
+		NewDiscussionEvent(),
+		NewDeleteDiscussionEvent(),
+		NewReadMessageEvent(svc.hub, svc, userId),
+	)
+	defer svc.hub.Unregister(userId, client)
+	svc.hub.RegisterInHub(userId, client)
 	discussions, err := svc.GetUserDiscussions(userId)
 	if err != nil {
 		return err
 	}
-
-	var err1, err2 error
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		err1 = client.WritePump(wg)
-	}()
-	for _, msg := range discussions {
-		if msg.CourseId != 0 {
-			connGroup := svc.hub.GetOrCreateConnGroup("l" + strconv.FormatInt(msg.CourseId, 10))
-			connGroup.register <- client
-		}
-		client.Send <- msg
+	for _, discussion := range discussions {
+		svc.hub.RegisterInDiscussion(userId, discussion.ID, client)
 	}
-	go func() {
-		err2 = client.ReadPump(wg)
-	}()
-	wg.Wait()
-	if err1 != nil {
-		return err1
-	}
-	if err2 != nil {
-		return err2
+	if err := client.Start(); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (svc *svc) StartDiscussion(userId string, discussionId int64, conn *websocket.Conn) error {
 	log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
-	client := &Client{
-		ConnGroup: svc.hub.GetOrCreateConnGroup("u" + userId),
-		WsConn:    conn,
-		Send:      make(chan interface{}, 256),
-	}
-	client.DataTypes = []DataType{
-		&typeMessage{svc, userId},
-		&typeDiscussion{svc, userId, client},
-	}
-	defer func() {
-		if !client.connClosed {
-			err := client.WsConn.Close()
-			if err != nil {
-				log.Errorf("Can't close websocket connection: %v", err)
-			}
-			client.connClosed = true
-		}
-	}()
-
-	client.ConnGroup.register <- client
-	discussion, err := svc.repo.FindByID(discussionId)
+	client := NewClientConnection(
+		conn,
+		NewMessageEvent(svc.hub, svc, userId),
+		NewDiscussionEvent(),
+		NewDeleteDiscussionEvent(),
+		NewReadMessageEvent(svc.hub, svc, userId),
+	)
+	defer svc.hub.Unregister(userId, client)
+	discussion, err := svc.FindByID(discussionId, userId)
 	if err != nil {
 		return err
 	}
-
-	var err1, err2 error
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-	go func() {
-		err1 = client.WritePump(wg)
-	}()
-	pastMessages, err := svc.repo.FindAllMessages(
-		FindQuery{
-			FromId:   &discussion.FromId,
-			ToId:     &discussion.ToId,
-			CourseId: &discussion.CourseId,
-		})
-	if err != nil {
+	svc.hub.RegisterInDiscussion(userId, discussion.ID, client)
+	if err := client.Start(); err != nil {
 		return err
 	}
-	for _, message := range pastMessages {
-		client.Send <- message
-	}
-	go func() {
-		err2 = client.ReadPump(wg)
-	}()
-	wg.Wait()
-	if err1 != nil {
-		return err1
-	}
-	if err2 != nil {
-		return err2
-	}
-
 	return nil
 }
 
@@ -232,3 +195,87 @@ func (svc *svc) AddFile(fileRequest *FileRequest) (*File, error) {
 	}
 	return svc.repo.CreateFile(&File{fileRequest.OwnerID, path})
 }
+
+func (svc *svc) FindAllMessages(params *htp.ListParams) ([]*Message, error) {
+	return svc.repo.FindAllMessages(params)
+}
+
+func (svc *svc) FindMessageByID(id int64) (*Message, error) {
+	return svc.repo.FindMessageByID(id)
+}
+
+func (svc *svc) CreateMessage(message *Message) (*Message, error) {
+	return svc.repo.CreateMessage(message)
+}
+
+func (svc *svc) UpdateMessage(id int64, upd *UpdateMessage) error {
+	return svc.repo.UpdateMessage(id, upd)
+}
+
+func (svc *svc) DeleteMessages(discussionId int64) error {
+	return svc.repo.DeleteMessages(discussionId)
+}
+
+func (svc *svc) GetParticipants(discussionId int64) ([]*Participant, error) {
+	return svc.repo.GetParticipants(discussionId)
+}
+
+func (svc *svc) AddParticipant(participant *Participant) error {
+	return svc.repo.AddParticipant(participant)
+}
+
+func (svc *svc) RemoveParticipant(participant *Participant) error {
+	return svc.repo.RemoveParticipant(participant)
+}
+
+func (svc *svc) DecrementUnreadMessagesCnt(participant *Participant) error {
+	return svc.repo.DecrementUnreadMessagesCnt(participant)
+}
+
+func (svc *svc) IncrementUnreadMessagesCnt(participant *Participant) error {
+	return svc.repo.IncrementUnreadMessagesCnt(participant)
+}
+
+//func (svc *svc) MakeInactive(id int64) error {
+//	upd := &Update{}
+//	*upd.IsActive = false
+//	return svc.repo.Update(id, upd)
+//}
+//
+//func (svc *svc) MakeActive(id int64) error {
+//	upd := &Update{}
+//	*upd.IsActive = true
+//	return svc.repo.Update(id, upd)
+//}
+//
+//func (svc *svc) SendViolation(violation *Violation) error {
+//	return svc.repo.CreateViolation(violation)
+//}
+//
+//func (svc *svc) GetViolations(params *htp.ListParams) ([]*Violation, error) {
+//	return svc.repo.GetViolations(params)
+//}
+//
+//func (svc *svc) BlockUser(requestingUserId string, discussionId int64) error {
+//	discussion, err := svc.repo.FindByID(discussionId)
+//	if err != nil {
+//		return err
+//	}
+//	if *discussion.SenderID != requestingUserId {
+//		return ErrNoPermission
+//	}
+//	upd := &Update{}
+//	return svc.repo.Update(discussionId, upd)
+//}
+//
+//func (svc *svc) UnblockUser(requestingUserId string, discussionId int64) error {
+//	discussion, err := svc.repo.FindByID(discussionId)
+//	if err != nil {
+//		return err
+//	}
+//	if *discussion.SenderID != requestingUserId {
+//		return ErrNoPermission
+//	}
+//	upd := &Update{}
+//	return svc.repo.Update(discussionId, upd)
+//}
