@@ -8,13 +8,13 @@ import (
 
 func main() {
 	config := passwordStrength.Config{
-		MinEditDistFromInputs: 0,
+		MinEditDistFromInputs: 3,
 		RegExps: map[string]int{
 			`[[:ascii:]]{8,}`:0,
 			`[[:digit:]]{1,}`:0,
 			`[[:upper:]]{1,}`:0,
 			`[[:lower:]]{1,}`:0,
-			`[[:punct:]]{1,}`:10,
+			//`[[:punct:]]{1,}`:10,
 		},
 		SearchInDictionary: true,
 		Entropy: true,
@@ -32,7 +32,7 @@ func main() {
 		var s string
 		fmt.Print("Type password:\n")
 		fmt.Scanf("%s", &s)
-		strgth, err := ps.Calc(s,[]string{"example@example.com", "username", "surname", "01081970", "87771234567"})
+		strgth, err := ps.Calc(s,[]string{"Example1@example.com", "username", "surname", "01081970", "87771234567"})
 		if err != nil {
 			log.Fatal(err)
 		}

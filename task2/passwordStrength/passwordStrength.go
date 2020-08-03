@@ -2,6 +2,7 @@ package passwordStrength
 
 import (
 	"bufio"
+	"log"
 	"math"
 	"os"
 	"regexp"
@@ -44,6 +45,7 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 			}
 		}
 		if ps.inDict(password) {
+			log.Println("Password found in dictionary!!!")
 			return VeryWeak, nil
 		}
 	}
@@ -52,6 +54,7 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 	var score = 0
 	var maxStrength = 0
 	var strength = 0
+
 	// For loop calculates how far the password is from user inputs.
 	for _, input := range userInputs {
 		distance := dist(password, input)
@@ -88,7 +91,8 @@ func (ps *PasswordStrength) Calc(password string, userInputs []string) (int, err
 	}
 	if ps.config.Entropy {
 		maxStrength += 4
-		strength += ps.entropy(password)
+		entropy := ps.entropy(password)
+		strength += entropy
 	}
 	if maxStrength == 0 {
 		return 4, nil

@@ -46,11 +46,11 @@ func NewImageResizer(file io.Reader, fileName string, fileSize int64) (ir *Image
 	// Determine image format and decode.
 	switch  {
 	case strings.HasSuffix(fileName, ".jpeg") || strings.HasSuffix(fileName, ".jpg"):
-		if strings.HasSuffix(fileName, ".jpeg"){
-			ir.imageFormat = JPEG
-		} else {
-			ir.imageFormat = JPG
-		}
+		//if strings.HasSuffix(fileName, ".jpeg"){
+		//} else {
+		//	ir.imageFormat = JPG
+		//}
+		ir.imageFormat = JPEG
 		ir.fileName = fileName[:len(fileName)-len(ir.imageFormat)-1]
 		ir.originalImg, err = jpeg.Decode(file)
 		if err != nil {
@@ -138,6 +138,7 @@ func saveImage(image image.Image, name string, imageFormat string) (string, erro
 	if err != nil {
 		return "", err
 	}
+
 	rel, err := filepath.Rel(cur, savingPath)
 	if err != nil {
 		return "", err
@@ -145,10 +146,10 @@ func saveImage(image image.Image, name string, imageFormat string) (string, erro
 
 	f, err := os.Create(rel +"/"+ name + "." + imageFormat)
 	if err != nil {
-		return "", errors.New(fmt.Sprintf("%v\ncur: %v\nsaving: %v\nrel: %v\n", err.Error(), cur, savingPath, rel))
+		return "", err
 	}
-	defer f.Close()
 
+	defer f.Close()
 	switch imageFormat {
 	case JPEG:
 		opt := jpeg.Options{
